@@ -83,9 +83,16 @@ build.yml  (workflow_dispatch only — no schedule)
 
 The watcher is lightweight by design: no checkout, no Docker setup, just two API calls. The full build job only runs when a new version is confirmed missing from GHCR.
 
-### Why GHCR is the source of truth for "already published"
+### Registry checks and source of truth
 
-The watcher and `build.yml` both check GHCR (not Docker Hub) to determine whether a build is needed. GHCR is controlled by the same `GITHUB_TOKEN` used throughout the workflow, making the check reliable without additional credentials. Docker Hub is treated as a push target, not a state source.
+`build.yml` uses GHCR as its internal source of truth for `already_published` — GHCR is controlled by the same `GITHUB_TOKEN` and needs no extra credentials. Docker Hub and the optional registries are push targets, not state sources for `build.yml`.
+
+The watcher, however, checks **all configured registries** independently. If any registry is missing the version tag — even if GHCR already has it — a build is triggered with the appropriate `force` value:
+
+- **GHCR missing** → `force=false`: `build.yml` will detect `already_published=false` and proceed naturally.
+- **GHCR present, another registry missing** → `force=true`: overrides the `already_published` guard so `build.yml` pushes to all registries instead of exiting early.
+
+This means a deleted Docker Hub tag, Codeberg tag, or Quay.io tag is automatically detected and recovered within 15 minutes without manual intervention.
 
 ### Fail-safe on GHCR token failure
 

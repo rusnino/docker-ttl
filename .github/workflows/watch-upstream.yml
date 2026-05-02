@@ -2,7 +2,7 @@ name: Watch Upstream
 
 on:
   schedule:
-    # Poll every 15 minutes — exits in ~10 s when already published
+    # Poll every 15 minutes — exits in ~10 s when all registries are in sync
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
@@ -18,6 +18,12 @@ permissions:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    # Map optional registry namespace secrets to env booleans (secrets not
+    # allowed in step-level if: conditions).
+    env:
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_NAMESPACE != '' }}
+      HAS_CODEBERG:  ${{ secrets.CODEBERG_NAMESPACE != '' }}
+      HAS_QUAY:      ${{ secrets.QUAY_NAMESPACE != '' }}
 
     steps:
       - name: Get latest upstream release tag
@@ -29,8 +35,12 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Upstream latest: ${VERSION}"
 
-      - name: Check if already published in GHCR
-        id: check
+      # ── Per-registry presence checks ─────────────────────────────────────────
+      # Each step outputs missing=true|false.
+      # Skipped steps produce no output (treated as "not configured", not missing).
+
+      - name: Check GHCR
+        id: check-ghcr
         env:
           VERSION: ${{ steps.upstream.outputs.version }}
           OWNER:   ${{ github.repository_owner }}
@@ -41,8 +51,8 @@ jobs:
             | jq -r '.token' || echo "")
 
           if [ -z "$GHCR_TOKEN" ]; then
-            echo "Could not obtain GHCR token — triggering build to be safe"
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            echo "Could not obtain GHCR token — assuming missing"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -53,20 +63,125 @@ jobs:
             || echo "000")
 
           if [ "$HTTP" = "200" ]; then
-            echo "Image ${VERSION} already published — nothing to do"
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "GHCR: ${VERSION} present"
+            echo "missing=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Image ${VERSION} not in GHCR (HTTP ${HTTP}) — will trigger build"
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            echo "GHCR: ${VERSION} missing (HTTP ${HTTP})"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Trigger build workflow
-        if: steps.check.outputs.already_published != 'true'
+      - name: Check Docker Hub
+        id: check-dockerhub
+        if: env.HAS_DOCKERHUB == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION:  ${{ steps.upstream.outputs.version }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          NS:      ${{ secrets.DOCKERHUB_NAMESPACE }}
         run: |
+          # Docker Hub public API — no auth required for public repositories.
+          TOKEN=$(curl -sf \
+            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${NS}/ttl:pull" \
+            | jq -r '.token' || echo "")
+
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://registry-1.docker.io/v2/${NS}/ttl/manifests/${VERSION}" \
+            || echo "000")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Docker Hub: ${VERSION} present"
+            echo "missing=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docker Hub: ${VERSION} missing (HTTP ${HTTP})"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check Codeberg
+        id: check-codeberg
+        if: env.HAS_CODEBERG == 'true'
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+          NS:      ${{ secrets.CODEBERG_NAMESPACE }}
+        run: |
+          TOKEN=$(curl -sf \
+            "https://codeberg.org/v2/token?service=codeberg.org&scope=repository:${NS}/ttl:pull" \
+            | jq -r '.token' || echo "")
+
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://codeberg.org/v2/${NS}/ttl/manifests/${VERSION}" \
+            || echo "000")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Codeberg: ${VERSION} present"
+            echo "missing=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Codeberg: ${VERSION} missing (HTTP ${HTTP})"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check Quay.io
+        id: check-quay
+        if: env.HAS_QUAY == 'true'
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+          NS:      ${{ secrets.QUAY_NAMESPACE }}
+        run: |
+          TOKEN=$(curl -sf \
+            "https://quay.io/v2/auth?service=quay.io&scope=repository:${NS}/ttl:pull" \
+            | jq -r '.token' || echo "")
+
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://quay.io/v2/${NS}/ttl/manifests/${VERSION}" \
+            || echo "000")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Quay.io: ${VERSION} present"
+            echo "missing=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Quay.io: ${VERSION} missing (HTTP ${HTTP})"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Trigger build if any configured registry is missing the version ───────
+      # force=false  → GHCR is also missing; build.yml will detect already_published=false
+      #               and run naturally.
+      # force=true   → GHCR already has the tag (already_published=true), but another
+      #               registry is missing; force bypasses the GHCR-only guard so
+      #               build.yml pushes to all registries.
+      - name: Trigger build if any registry is missing
+        env:
+          GH_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
+          VERSION:          ${{ steps.upstream.outputs.version }}
+          GHCR_MISSING:     ${{ steps.check-ghcr.outputs.missing }}
+          DOCKERHUB_MISSING: ${{ steps.check-dockerhub.outputs.missing }}
+          CODEBERG_MISSING:  ${{ steps.check-codeberg.outputs.missing }}
+          QUAY_MISSING:      ${{ steps.check-quay.outputs.missing }}
+        run: |
+          ANY_MISSING=false
+          [ "$GHCR_MISSING" = "true" ]      && ANY_MISSING=true
+          [ "$DOCKERHUB_MISSING" = "true" ] && ANY_MISSING=true
+          [ "$CODEBERG_MISSING" = "true" ]  && ANY_MISSING=true
+          [ "$QUAY_MISSING" = "true" ]      && ANY_MISSING=true
+
+          if [ "$ANY_MISSING" = "false" ]; then
+            echo "Version ${VERSION} present in all configured registries — nothing to do"
+            exit 0
+          fi
+
+          # If GHCR already has the tag, build.yml's already_published guard would
+          # skip the build — use force=true to override it.
+          if [ "$GHCR_MISSING" = "true" ]; then
+            FORCE=false
+          else
+            FORCE=true
+          fi
+
+          echo "Triggering build for ${VERSION} (force=${FORCE})"
           gh workflow run build.yml \
             --repo "${{ github.repository }}" \
             --field version="${VERSION}" \
-            --field force=false
+            --field force="${FORCE}"
