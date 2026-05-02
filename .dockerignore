@@ -1,6 +1,7 @@
 .git
 .github
 README.md
-LICENSE
-LICENSES/
 *.md
+!LICENSES/
+!LICENSES/*.txt
+!LICENSE

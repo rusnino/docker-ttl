@@ -47,6 +47,8 @@ FROM runtime-${TARGETARCH}
 ARG TTL_VERSION
 
 COPY --from=downloader /tmp/ttl-bin /usr/local/bin/ttl
+COPY LICENSE      /usr/share/licenses/docker-ttl/LICENSE
+COPY LICENSES/    /usr/share/licenses/ttl/
 
 LABEL org.opencontainers.image.title="ttl" \
       org.opencontainers.image.description="Unofficial container image for ttl — a traceroute-like CLI tool written in Rust" \
