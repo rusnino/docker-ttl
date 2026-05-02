@@ -113,8 +113,13 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ttl ${VERSION} — Skipped
 
-          Version \`${VERSION}\` is already present in GHCR.
-          No build was triggered. To force a rebuild, re-run with \`force=true\`.
+          GHCR versioned tag \`${VERSION}\` is already present.
+
+          \`build.yml\` checks only GHCR's versioned tag on manual runs — it does not
+          verify bare tags or mirror registries. The watcher handles full registry
+          reconciliation automatically every 15 minutes.
+
+          To republish all configured tags and mirrors, re-run with \`force=true\`.
           EOF
 
   # ── Job 3: build and push ────────────────────────────────────────────────────
