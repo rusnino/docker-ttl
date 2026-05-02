@@ -94,7 +94,26 @@ jobs:
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # ── Job 2: build and push ────────────────────────────────────────────────────
+  # ── Job 2: skip summary (runs when build-and-push is skipped) ───────────────
+  skip-summary:
+    needs: check-version
+    if: >-
+      needs.check-version.outputs.already_published == 'true' &&
+      inputs.force != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write skip summary
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ttl ${VERSION} — Skipped
+
+          Version \`${VERSION}\` is already present in GHCR.
+          No build was triggered. To force a rebuild, re-run with \`force=true\`.
+          EOF
+
+  # ── Job 3: build and push ────────────────────────────────────────────────────
   # Runs when the version is not yet published, OR when force=true.
   # The watcher always passes force=false, so it stays idempotent.
   # Manual UI triggers default to force=false but can set it to true for rebuilds.
