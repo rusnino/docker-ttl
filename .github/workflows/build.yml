@@ -323,42 +323,27 @@ jobs:
             "ghcr.io/${OWNER}/ttl:${VERSION}" \
             --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}  {{.Digest}}{{"\n"}}{{end}}')
 
-          cat > digests.txt <<DIGEST_EOF
-# ttl ${VERSION} — Image Digests
-# Use these to pin the image to an exact, immutable layer set.
-#
-# docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@<index-digest> 1.1.1.1
-
-multi-platform index  ${INDEX_DIGEST}
-${PLATFORM_DIGESTS}
-DIGEST_EOF
+          {
+            echo "# ttl ${VERSION} — Image Digests"
+            echo "# Use these to pin the image to an exact, immutable layer set."
+            echo "#"
+            echo "# docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@<index-digest> 1.1.1.1"
+            echo ""
+            echo "multi-platform index  ${INDEX_DIGEST}"
+            printf '%s\n' "${PLATFORM_DIGESTS}"
+          } > digests.txt
 
           # Build pull section — omit latest if publish_latest=false
           if [ "${PUBLISH_LATEST}" = "true" ]; then
-            PULL_CMDS="\`\`\`sh
-docker pull ghcr.io/${OWNER}/ttl:${VERSION}
-docker pull ghcr.io/${OWNER}/ttl:latest
-\`\`\`"
+            PULL_BLOCK="$(printf '```sh\ndocker pull ghcr.io/%s/ttl:%s\ndocker pull ghcr.io/%s/ttl:latest\n```' \
+              "${OWNER}" "${VERSION}" "${OWNER}")"
           else
-            PULL_CMDS="\`\`\`sh
-docker pull ghcr.io/${OWNER}/ttl:${VERSION}
-\`\`\`
-> \`latest\` was not updated in this build."
+            PULL_BLOCK="$(printf '```sh\ndocker pull ghcr.io/%s/ttl:%s\n```\n> `latest` was not updated in this build.' \
+              "${OWNER}" "${VERSION}")"
           fi
 
-          NOTES="Packages upstream [ttl ${VERSION}](https://github.com/lance0/ttl/releases/tag/${VERSION}).
-
-## Pull
-
-${PULL_CMDS}
-
-## Pin by digest (recommended for production)
-
-\`\`\`sh
-docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@${INDEX_DIGEST} 1.1.1.1
-\`\`\`
-
-Full per-platform digests are in the attached \`digests.txt\`."
+          NOTES="$(printf 'Packages upstream [ttl %s](https://github.com/lance0/ttl/releases/tag/%s).\n\n## Pull\n\n%s\n\n## Pin by digest (recommended for production)\n\n```sh\ndocker run --rm --cap-add=NET_RAW ghcr.io/%s/ttl@%s 1.1.1.1\n```\n\nFull per-platform digests are in the attached `digests.txt`.' \
+            "${VERSION}" "${VERSION}" "${PULL_BLOCK}" "${OWNER}" "${INDEX_DIGEST}")"
 
           if gh release view "${VERSION}" --repo "${REPO}" &>/dev/null; then
             # Release exists — update notes and replace digests.txt asset
