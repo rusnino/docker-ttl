@@ -1,0 +1,67 @@
+name: Watch Upstream
+
+on:
+  schedule:
+    # Poll every 15 minutes — exits in ~10 s when already published
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: read   # needed to exchange GITHUB_TOKEN for a GHCR pull token
+  actions:  write  # needed to trigger build.yml via gh workflow run
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get latest upstream release tag
+        id: upstream
+        run: |
+          RAW=$(curl -fsSL "https://api.github.com/repos/lance0/ttl/releases/latest" \
+            | jq -r '.tag_name')
+          [[ "$RAW" == v* ]] && VERSION="$RAW" || VERSION="v${RAW}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Upstream latest: ${VERSION}"
+
+      - name: Check if already published in GHCR
+        id: check
+        env:
+          VERSION: ${{ steps.upstream.outputs.version }}
+          OWNER:   ${{ github.repository_owner }}
+        run: |
+          GHCR_TOKEN=$(curl -sf \
+            -u "${OWNER}:${{ secrets.GITHUB_TOKEN }}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${OWNER}/ttl:pull" \
+            | jq -r '.token' || echo "")
+
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "Could not obtain GHCR token — triggering build to be safe"
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GHCR_TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/${OWNER}/ttl/manifests/${VERSION}" \
+            || echo "000")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Image ${VERSION} already published — nothing to do"
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Image ${VERSION} not in GHCR (HTTP ${HTTP}) — will trigger build"
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger build workflow
+        if: steps.check.outputs.already_published != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION:  ${{ steps.upstream.outputs.version }}
+        run: |
+          gh workflow run build.yml \
+            --repo "${{ github.repository }}" \
+            --field version="${VERSION}"
