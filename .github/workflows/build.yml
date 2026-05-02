@@ -11,6 +11,10 @@ on:
         description: 'Rebuild even if the version is already published (true = forced rebuild, false = idempotent).'
         required: false
         default: 'false'
+      publish_latest:
+        description: 'Push the latest tag. Set to false when rebuilding an old version to avoid rolling back latest.'
+        required: false
+        default: 'true'
 
 concurrency:
   # Group uses the raw input, before v-prefix normalisation happens inside the workflow.
@@ -183,17 +187,43 @@ jobs:
 
       # ── Build & push to primary registries (Docker Hub + GHCR) ───────────
 
-      - name: Extract metadata
+      # Compute the full tag list for Docker Hub and GHCR.
+      # latest is included only when publish_latest=true to prevent accidental
+      # rollback when force-rebuilding an old version.
+      - name: Compute image tags
+        id: tags
+        env:
+          VERSION:        ${{ needs.check-version.outputs.version }}
+          VERSION_BARE:   ${{ needs.check-version.outputs.version_bare }}
+          DOCKERHUB_NS:   ${{ secrets.DOCKERHUB_NAMESPACE }}
+          OWNER:          ${{ github.repository_owner }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+        run: |
+          TAGS=(
+            "docker.io/${DOCKERHUB_NS}/ttl:${VERSION}"
+            "docker.io/${DOCKERHUB_NS}/ttl:${VERSION_BARE}"
+            "ghcr.io/${OWNER}/ttl:${VERSION}"
+            "ghcr.io/${OWNER}/ttl:${VERSION_BARE}"
+          )
+          if [ "${PUBLISH_LATEST}" = "true" ]; then
+            TAGS+=(
+              "docker.io/${DOCKERHUB_NS}/ttl:latest"
+              "ghcr.io/${OWNER}/ttl:latest"
+            )
+          fi
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${TAGS[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata (labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             docker.io/${{ secrets.DOCKERHUB_NAMESPACE }}/ttl
             ghcr.io/${{ github.repository_owner }}/ttl
-          tags: |
-            type=raw,value=${{ needs.check-version.outputs.version }}
-            type=raw,value=${{ needs.check-version.outputs.version_bare }}
-            type=raw,value=latest
           labels: |
             org.opencontainers.image.title=ttl
             org.opencontainers.image.description=Unofficial container image for ttl — a traceroute-like CLI tool written in Rust
@@ -208,7 +238,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             TTL_VERSION=${{ needs.check-version.outputs.version }}
@@ -226,45 +256,50 @@ jobs:
         if: ${{ steps.codeberg-login.outcome == 'success' }}
         continue-on-error: true
         env:
-          VERSION:      ${{ needs.check-version.outputs.version }}
-          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
-          DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
-          CODEBERG_NS:  ${{ secrets.CODEBERG_NAMESPACE }}
+          VERSION:        ${{ needs.check-version.outputs.version }}
+          VERSION_BARE:   ${{ needs.check-version.outputs.version_bare }}
+          DOCKERHUB_NS:   ${{ secrets.DOCKERHUB_NAMESPACE }}
+          CODEBERG_NS:    ${{ secrets.CODEBERG_NAMESPACE }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
         run: |
           SOURCE="docker.io/${DOCKERHUB_NS}/ttl:${VERSION}"
           TARGET="codeberg.org/${CODEBERG_NS}/ttl"
-          docker buildx imagetools create \
-            --tag "${TARGET}:${VERSION}" \
-            --tag "${TARGET}:${VERSION_BARE}" \
-            --tag "${TARGET}:latest" \
-            "${SOURCE}"
+          ARGS=(
+            --tag "${TARGET}:${VERSION}"
+            --tag "${TARGET}:${VERSION_BARE}"
+          )
+          [ "${PUBLISH_LATEST}" = "true" ] && ARGS+=(--tag "${TARGET}:latest")
+          docker buildx imagetools create "${ARGS[@]}" "${SOURCE}"
 
       - name: Push to Quay.io
         id: push-quay
         if: ${{ steps.quay-login.outcome == 'success' }}
         continue-on-error: true
         env:
-          VERSION:      ${{ needs.check-version.outputs.version }}
-          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
-          DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
-          QUAY_NS:      ${{ secrets.QUAY_NAMESPACE }}
+          VERSION:        ${{ needs.check-version.outputs.version }}
+          VERSION_BARE:   ${{ needs.check-version.outputs.version_bare }}
+          DOCKERHUB_NS:   ${{ secrets.DOCKERHUB_NAMESPACE }}
+          QUAY_NS:        ${{ secrets.QUAY_NAMESPACE }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
         run: |
           SOURCE="docker.io/${DOCKERHUB_NS}/ttl:${VERSION}"
           TARGET="quay.io/${QUAY_NS}/ttl"
-          docker buildx imagetools create \
-            --tag "${TARGET}:${VERSION}" \
-            --tag "${TARGET}:${VERSION_BARE}" \
-            --tag "${TARGET}:latest" \
-            "${SOURCE}"
+          ARGS=(
+            --tag "${TARGET}:${VERSION}"
+            --tag "${TARGET}:${VERSION_BARE}"
+          )
+          [ "${PUBLISH_LATEST}" = "true" ] && ARGS+=(--tag "${TARGET}:latest")
+          docker buildx imagetools create "${ARGS[@]}" "${SOURCE}"
 
       # ── Step summary ──────────────────────────────────────────────────────────
       - name: Write build summary
         if: always()
         env:
-          VERSION:      ${{ needs.check-version.outputs.version }}
-          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
-          FORCE:        ${{ inputs.force }}
-          PRIMARY:      ${{ steps.build-push.outcome }}
+          VERSION:        ${{ needs.check-version.outputs.version }}
+          VERSION_BARE:   ${{ needs.check-version.outputs.version_bare }}
+          FORCE:          ${{ inputs.force }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          PRIMARY:        ${{ steps.build-push.outcome }}
           CODEBERG_LOGIN: ${{ steps.codeberg-login.outcome }}
           CODEBERG_PUSH:  ${{ steps.push-codeberg.outcome }}
           QUAY_LOGIN:     ${{ steps.quay-login.outcome }}
@@ -292,7 +327,11 @@ jobs:
             fi
           }
 
-          TAGS="\`${VERSION}\` · \`${VERSION_BARE}\` · \`latest\`"
+          if [ "${PUBLISH_LATEST}" = "true" ]; then
+            TAGS="\`${VERSION}\` · \`${VERSION_BARE}\` · \`latest\`"
+          else
+            TAGS="\`${VERSION}\` · \`${VERSION_BARE}\` _(latest not published)_"
+          fi
           FORCED="${FORCE:-false}"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF

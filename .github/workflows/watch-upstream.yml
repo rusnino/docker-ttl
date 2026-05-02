@@ -186,4 +186,5 @@ jobs:
           gh workflow run build.yml \
             --repo "${{ github.repository }}" \
             --field version="${VERSION}" \
-            --field force="${FORCE}"
+            --field force="${FORCE}" \
+            --field publish_latest=true
