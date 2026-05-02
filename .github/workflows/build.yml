@@ -119,8 +119,9 @@ jobs:
 
   # ── Job 3: build and push ────────────────────────────────────────────────────
   # Runs when the version is not yet published, OR when force=true.
-  # The watcher always passes force=false, so it stays idempotent.
-  # Manual UI triggers default to force=false but can set it to true for rebuilds.
+  # The watcher passes force=false when GHCR's versioned tag (vX.Y.Z) is missing,
+  # and force=true when GHCR has vX.Y.Z but a bare/latest tag or another registry
+  # is missing. Manual UI triggers default to force=false.
   build-and-push:
     needs: check-version
     if: >-
