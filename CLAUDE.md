@@ -50,6 +50,8 @@ Triggered exclusively via `workflow_dispatch` (by the watcher or manually). Thre
 
 Key constraint: `secrets` context is not available in step-level `if:` conditions — optional registry presence is mapped to env booleans (`HAS_CODEBERG`, `HAS_QUAY`) in the job `env:` block. A registry is considered configured only when all three secrets (namespace + username + token) are set.
 
+When manually rebuilding an older version, always use `force=true` and `publish_latest=false` — omitting `publish_latest=false` will roll back the `latest` tag to the older release.
+
 ## Required secrets
 
 | Secret | Purpose |
