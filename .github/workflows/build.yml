@@ -1,0 +1,167 @@
+name: Build and Push
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'ttl version to build (e.g. v0.19.0). Leave empty to use latest upstream release.'
+        required: false
+        default: ''
+  schedule:
+    # Run every 6 hours to pick up new upstream releases automatically
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: read
+  packages: write  # needed for ghcr.io push
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Version resolution ────────────────────────────────────────────────
+      - name: Determine version
+        id: get-version
+        run: |
+          INPUT="${{ inputs.version }}"
+          if [ -n "$INPUT" ]; then
+            RAW_VERSION="$INPUT"
+          else
+            RAW_VERSION="$(curl -fsSL https://api.github.com/repos/lance0/ttl/releases/latest \
+              | jq -r '.tag_name')"
+          fi
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize version
+        id: version
+        run: |
+          RAW="${{ steps.get-version.outputs.raw_version }}"
+          # Ensure v-prefix (v0.19.0)
+          [[ "$RAW" == v* ]] && VERSION="$RAW" || VERSION="v${RAW}"
+          # Bare version without v prefix (0.19.0)
+          VERSION_BARE="${VERSION#v}"
+          echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
+          echo "version_bare=${VERSION_BARE}" >> "$GITHUB_OUTPUT"
+
+      # ── Checkout & builder setup ──────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Registry logins ───────────────────────────────────────────────────
+
+      # Required: Docker Hub (primary source for imagetools mirrors)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Required: GHCR — uses the automatic GITHUB_TOKEN
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional: Codeberg — step is skipped entirely when secret is not set.
+      # If the secret is set but auth fails, the error is recorded but the
+      # workflow continues; the Codeberg push step checks the outcome.
+      - name: Log in to Codeberg
+        id: codeberg-login
+        if: ${{ secrets.CODEBERG_TOKEN != '' }}
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: codeberg.org
+          username: ${{ secrets.CODEBERG_USERNAME }}
+          password: ${{ secrets.CODEBERG_TOKEN }}
+
+      # Optional: Quay.io — same skip/continue-on-error pattern as Codeberg.
+      # Use a robot account: username format is "namespace+robotname".
+      - name: Log in to Quay.io
+        id: quay-login
+        if: ${{ secrets.QUAY_TOKEN != '' }}
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      # ── Build & push to primary registries (Docker Hub + GHCR) ───────────
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            docker.io/${{ secrets.DOCKERHUB_NAMESPACE }}/ttl
+            ghcr.io/${{ github.repository_owner }}/ttl
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version_bare }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=ttl
+            org.opencontainers.image.description=Unofficial container image for ttl — a traceroute-like CLI tool written in Rust
+            org.opencontainers.image.url=https://github.com/lance0/ttl
+            org.opencontainers.image.licenses=MIT OR Apache-2.0
+            org.opencontainers.image.vendor=Unofficial
+
+      - name: Build and push to Docker Hub and GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            TTL_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Mirror to optional registries via imagetools (no rebuild) ─────────
+      # imagetools create copies the multi-platform manifest + layers from
+      # Docker Hub to the target registry without a full rebuild.
+
+      - name: Push to Codeberg
+        if: ${{ steps.codeberg-login.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          VERSION:      ${{ steps.version.outputs.version }}
+          VERSION_BARE: ${{ steps.version.outputs.version_bare }}
+          DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
+          CODEBERG_NS:  ${{ secrets.CODEBERG_NAMESPACE }}
+        run: |
+          SOURCE="docker.io/${DOCKERHUB_NS}/ttl:${VERSION}"
+          TARGET="codeberg.org/${CODEBERG_NS}/ttl"
+          docker buildx imagetools create \
+            --tag "${TARGET}:${VERSION}" \
+            --tag "${TARGET}:${VERSION_BARE}" \
+            --tag "${TARGET}:latest" \
+            "${SOURCE}"
+
+      - name: Push to Quay.io
+        if: ${{ steps.quay-login.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          VERSION:      ${{ steps.version.outputs.version }}
+          VERSION_BARE: ${{ steps.version.outputs.version_bare }}
+          DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
+          QUAY_NS:      ${{ secrets.QUAY_NAMESPACE }}
+        run: |
+          SOURCE="docker.io/${DOCKERHUB_NS}/ttl:${VERSION}"
+          TARGET="quay.io/${QUAY_NS}/ttl"
+          docker buildx imagetools create \
+            --tag "${TARGET}:${VERSION}" \
+            --tag "${TARGET}:${VERSION_BARE}" \
+            --tag "${TARGET}:latest" \
+            "${SOURCE}"
