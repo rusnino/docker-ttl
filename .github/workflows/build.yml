@@ -192,6 +192,8 @@ jobs:
             TTL_VERSION=${{ needs.check-version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          sbom: true
+          provenance: true
 
       # ── Mirror to optional registries via imagetools (no rebuild) ─────────
       # imagetools create copies the multi-platform manifest + layers from
