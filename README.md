@@ -105,7 +105,7 @@ absent. Set them whenever you are ready to publish there.
   A checksum mismatch causes the build to fail.
 - `curl` is installed only in the downloader build stage and is not present in the final runtime image.
 - License files for both this wrapper (`LICENSE`) and the upstream binary (`LICENSES/`) are included inside the image at `/usr/share/licenses/`.
-- SBOM (CycloneDX) and SLSA provenance attestations are attached to every published image as OCI referrers.
+- SBOM and provenance attestations are attached to every published image as OCI referrers.
 - No secrets or credentials are baked into the image or the repository.
 - For production use, pin images by digest rather than tag:
   ```sh
