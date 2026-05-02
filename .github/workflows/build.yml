@@ -342,8 +342,8 @@ jobs:
               "${OWNER}" "${VERSION}")"
           fi
 
-          NOTES="$(printf 'Packages upstream [ttl %s](https://github.com/lance0/ttl/releases/tag/%s).\n\n## Pull\n\n%s\n\n## Pin by digest (recommended for production)\n\n```sh\ndocker run --rm --cap-add=NET_RAW ghcr.io/%s/ttl@%s 1.1.1.1\n```\n\nFull per-platform digests are in the attached `digests.txt`.' \
-            "${VERSION}" "${VERSION}" "${PULL_BLOCK}" "${OWNER}" "${INDEX_DIGEST}")"
+          NOTES="$(printf 'This release tracks container image digests for upstream ttl %s. The attached `digests.txt` is authoritative for the currently published image.\n\nPackages upstream [ttl %s](https://github.com/lance0/ttl/releases/tag/%s).\n\n## Pull\n\n%s\n\n## Pin by digest (recommended for production)\n\n```sh\ndocker run --rm --cap-add=NET_RAW ghcr.io/%s/ttl@%s 1.1.1.1\n```\n\nFull per-platform digests are in the attached `digests.txt`.' \
+            "${VERSION}" "${VERSION}" "${VERSION}" "${PULL_BLOCK}" "${OWNER}" "${INDEX_DIGEST}")"
 
           if gh release view "${VERSION}" --repo "${REPO}" &>/dev/null; then
             # Release exists — update notes and replace digests.txt asset

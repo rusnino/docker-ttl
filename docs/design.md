@@ -137,6 +137,8 @@ The `digests.txt` asset contains the multi-platform manifest index digest and pe
 
 Release notes omit the `latest` pull command when `publish_latest=false`, with an explicit note that `latest` was not updated in this build.
 
+**Git tag is not moved on forced rebuilds.** When a forced rebuild updates an existing release, the GitHub Release notes and `digests.txt` are refreshed, but the Git tag (`vX.Y.Z`) continues to point to the original commit. GitHub automatically generates source archives from release tags, so those archives will correspond to the commit at first-publish time, not the forced-rebuild commit. This is intentional: the release is treated as image metadata for the upstream `ttl` version, not as a source snapshot of this repository. `digests.txt` is the authoritative source of truth for the currently published image.
+
 ### Observability: step summary and skip summary
 
 Every `build-and-push` run writes a `GITHUB_STEP_SUMMARY` with a per-registry outcome table (✅ success / ❌ failure / ⏭️ not configured). This makes silent `continue-on-error` failures on optional registries visible without digging into step logs.
