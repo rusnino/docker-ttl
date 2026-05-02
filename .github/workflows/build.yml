@@ -175,6 +175,7 @@ jobs:
             org.opencontainers.image.vendor=Unofficial
 
       - name: Build and push to Docker Hub and GHCR
+        id: build-push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -192,6 +193,7 @@ jobs:
       # Docker Hub to the target registry without a full rebuild.
 
       - name: Push to Codeberg
+        id: push-codeberg
         if: ${{ steps.codeberg-login.outcome == 'success' }}
         continue-on-error: true
         env:
@@ -209,6 +211,7 @@ jobs:
             "${SOURCE}"
 
       - name: Push to Quay.io
+        id: push-quay
         if: ${{ steps.quay-login.outcome == 'success' }}
         continue-on-error: true
         env:
@@ -224,3 +227,55 @@ jobs:
             --tag "${TARGET}:${VERSION_BARE}" \
             --tag "${TARGET}:latest" \
             "${SOURCE}"
+
+      # ── Step summary ──────────────────────────────────────────────────────────
+      - name: Write build summary
+        if: always()
+        env:
+          VERSION:      ${{ needs.check-version.outputs.version }}
+          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
+          FORCE:        ${{ inputs.force }}
+          PRIMARY:      ${{ steps.build-push.outcome }}
+          CODEBERG_LOGIN: ${{ steps.codeberg-login.outcome }}
+          CODEBERG_PUSH:  ${{ steps.push-codeberg.outcome }}
+          QUAY_LOGIN:     ${{ steps.quay-login.outcome }}
+          QUAY_PUSH:      ${{ steps.push-quay.outcome }}
+        run: |
+          outcome_icon() {
+            case "$1" in
+              success) echo "✅ success" ;;
+              failure) echo "❌ failure" ;;
+              skipped) echo "⏭️ not configured" ;;
+              *)       echo "⚪ $1" ;;
+            esac
+          }
+
+          # For optional registries, show the push outcome when login succeeded,
+          # the login outcome when login failed, or "not configured" when skipped.
+          optional_outcome() {
+            local login="$1" push="$2"
+            if [ "$login" = "skipped" ]; then
+              echo "⏭️ not configured"
+            elif [ "$login" = "failure" ]; then
+              echo "❌ login failed"
+            else
+              outcome_icon "$push"
+            fi
+          }
+
+          TAGS="\`${VERSION}\` · \`${VERSION_BARE}\` · \`latest\`"
+          FORCED="${FORCE:-false}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ttl ${VERSION} — Build Summary
+
+          **Tags:** ${TAGS}
+          **Forced rebuild:** \`${FORCED}\`
+
+          | Registry   | Status |
+          |------------|--------|
+          | Docker Hub | $(outcome_icon "$PRIMARY") |
+          | GHCR       | $(outcome_icon "$PRIMARY") |
+          | Codeberg   | $(optional_outcome "$CODEBERG_LOGIN" "$CODEBERG_PUSH") |
+          | Quay.io    | $(optional_outcome "$QUAY_LOGIN" "$QUAY_PUSH") |
+          EOF
