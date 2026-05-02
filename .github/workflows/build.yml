@@ -18,6 +18,11 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # secrets context is not available in step-level if: conditions.
+    # Map secret presence to plain env booleans, which ARE allowed in step if:.
+    env:
+      HAS_CODEBERG: ${{ secrets.CODEBERG_TOKEN != '' }}
+      HAS_QUAY:     ${{ secrets.QUAY_TOKEN != '' }}
 
     steps:
       # ── Version resolution ────────────────────────────────────────────────
@@ -75,7 +80,7 @@ jobs:
       # workflow continues; the Codeberg push step checks the outcome.
       - name: Log in to Codeberg
         id: codeberg-login
-        if: ${{ secrets.CODEBERG_TOKEN != '' }}
+        if: ${{ env.HAS_CODEBERG == 'true' }}
         continue-on-error: true
         uses: docker/login-action@v3
         with:
@@ -87,7 +92,7 @@ jobs:
       # Use a robot account: username format is "namespace+robotname".
       - name: Log in to Quay.io
         id: quay-login
-        if: ${{ secrets.QUAY_TOKEN != '' }}
+        if: ${{ env.HAS_QUAY == 'true' }}
         continue-on-error: true
         uses: docker/login-action@v3
         with:
