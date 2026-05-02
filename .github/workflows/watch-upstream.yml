@@ -34,18 +34,25 @@ jobs:
           RAW=$(curl -fsSL "https://api.github.com/repos/lance0/ttl/releases/latest" \
             | jq -r '.tag_name')
           [[ "$RAW" == v* ]] && VERSION="$RAW" || VERSION="v${RAW}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          VERSION_BARE="${VERSION#v}"
+          echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
+          echo "version_bare=${VERSION_BARE}" >> "$GITHUB_OUTPUT"
           echo "Upstream latest: ${VERSION}"
 
       # ── Per-registry presence checks ─────────────────────────────────────────
-      # Each step outputs missing=true|false.
+      # Each step checks all three expected tags: vX.Y.Z, X.Y.Z, latest.
+      # missing=true if ANY tag is absent.
       # Skipped steps produce no output (treated as "not configured", not missing).
+      #
+      # GHCR also outputs versioned_missing (true/false for vX.Y.Z only) — used by
+      # the trigger step to decide force=true|false independently of bare/latest.
 
       - name: Check GHCR
         id: check-ghcr
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
-          OWNER:   ${{ github.repository_owner }}
+          VERSION:      ${{ steps.upstream.outputs.version }}
+          VERSION_BARE: ${{ steps.upstream.outputs.version_bare }}
+          OWNER:        ${{ github.repository_owner }}
         run: |
           GHCR_TOKEN=$(curl -sf \
             -u "${OWNER}:${{ secrets.GITHUB_TOKEN }}" \
@@ -53,115 +60,146 @@ jobs:
             | jq -r '.token' || echo "")
 
           if [ -z "$GHCR_TOKEN" ]; then
-            echo "Could not obtain GHCR token — assuming missing"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
+            echo "Could not obtain GHCR token — assuming all tags missing"
+            echo "missing=true"          >> "$GITHUB_OUTPUT"
+            echo "versioned_missing=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${GHCR_TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-            "https://ghcr.io/v2/${OWNER}/ttl/manifests/${VERSION}" \
-            || echo "000")
+          check_tag() {
+            curl -sf -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${GHCR_TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+              "https://ghcr.io/v2/${OWNER}/ttl/manifests/$1" \
+              || echo "000"
+          }
 
-          if [ "$HTTP" = "200" ]; then
-            echo "GHCR: ${VERSION} present"
-            echo "missing=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "GHCR: ${VERSION} missing (HTTP ${HTTP})"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
-          fi
+          MISSING=false
+          VERSIONED_MISSING=false
+
+          for TAG in "${VERSION}" "${VERSION_BARE}" "latest"; do
+            HTTP=$(check_tag "$TAG")
+            if [ "$HTTP" = "200" ]; then
+              echo "GHCR: ${TAG} present"
+            else
+              echo "GHCR: ${TAG} missing (HTTP ${HTTP})"
+              MISSING=true
+              [ "$TAG" = "${VERSION}" ] && VERSIONED_MISSING=true
+            fi
+          done
+
+          echo "missing=${MISSING}"                   >> "$GITHUB_OUTPUT"
+          echo "versioned_missing=${VERSIONED_MISSING}" >> "$GITHUB_OUTPUT"
 
       - name: Check Docker Hub
         id: check-dockerhub
         if: env.HAS_DOCKERHUB == 'true'
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
-          NS:      ${{ secrets.DOCKERHUB_NAMESPACE }}
+          VERSION:      ${{ steps.upstream.outputs.version }}
+          VERSION_BARE: ${{ steps.upstream.outputs.version_bare }}
+          NS:           ${{ secrets.DOCKERHUB_NAMESPACE }}
         run: |
-          # Docker Hub public API — no auth required for public repositories.
           TOKEN=$(curl -sf \
             "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${NS}/ttl:pull" \
             | jq -r '.token' || echo "")
 
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-            "https://registry-1.docker.io/v2/${NS}/ttl/manifests/${VERSION}" \
-            || echo "000")
+          check_tag() {
+            curl -sf -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+              "https://registry-1.docker.io/v2/${NS}/ttl/manifests/$1" \
+              || echo "000"
+          }
 
-          if [ "$HTTP" = "200" ]; then
-            echo "Docker Hub: ${VERSION} present"
-            echo "missing=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Docker Hub: ${VERSION} missing (HTTP ${HTTP})"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
-          fi
+          MISSING=false
+          for TAG in "${VERSION}" "${VERSION_BARE}" "latest"; do
+            HTTP=$(check_tag "$TAG")
+            if [ "$HTTP" = "200" ]; then
+              echo "Docker Hub: ${TAG} present"
+            else
+              echo "Docker Hub: ${TAG} missing (HTTP ${HTTP})"
+              MISSING=true
+            fi
+          done
+          echo "missing=${MISSING}" >> "$GITHUB_OUTPUT"
 
       - name: Check Codeberg
         id: check-codeberg
         if: env.HAS_CODEBERG == 'true'
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
-          NS:      ${{ secrets.CODEBERG_NAMESPACE }}
+          VERSION:      ${{ steps.upstream.outputs.version }}
+          VERSION_BARE: ${{ steps.upstream.outputs.version_bare }}
+          NS:           ${{ secrets.CODEBERG_NAMESPACE }}
         run: |
           TOKEN=$(curl -sf \
             "https://codeberg.org/v2/token?service=codeberg.org&scope=repository:${NS}/ttl:pull" \
             | jq -r '.token' || echo "")
 
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-            "https://codeberg.org/v2/${NS}/ttl/manifests/${VERSION}" \
-            || echo "000")
+          check_tag() {
+            curl -sf -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+              "https://codeberg.org/v2/${NS}/ttl/manifests/$1" \
+              || echo "000"
+          }
 
-          if [ "$HTTP" = "200" ]; then
-            echo "Codeberg: ${VERSION} present"
-            echo "missing=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Codeberg: ${VERSION} missing (HTTP ${HTTP})"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
-          fi
+          MISSING=false
+          for TAG in "${VERSION}" "${VERSION_BARE}" "latest"; do
+            HTTP=$(check_tag "$TAG")
+            if [ "$HTTP" = "200" ]; then
+              echo "Codeberg: ${TAG} present"
+            else
+              echo "Codeberg: ${TAG} missing (HTTP ${HTTP})"
+              MISSING=true
+            fi
+          done
+          echo "missing=${MISSING}" >> "$GITHUB_OUTPUT"
 
       - name: Check Quay.io
         id: check-quay
         if: env.HAS_QUAY == 'true'
         env:
-          VERSION: ${{ steps.upstream.outputs.version }}
-          NS:      ${{ secrets.QUAY_NAMESPACE }}
+          VERSION:      ${{ steps.upstream.outputs.version }}
+          VERSION_BARE: ${{ steps.upstream.outputs.version_bare }}
+          NS:           ${{ secrets.QUAY_NAMESPACE }}
         run: |
           TOKEN=$(curl -sf \
             "https://quay.io/v2/auth?service=quay.io&scope=repository:${NS}/ttl:pull" \
             | jq -r '.token' || echo "")
 
-          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
-            "https://quay.io/v2/${NS}/ttl/manifests/${VERSION}" \
-            || echo "000")
+          check_tag() {
+            curl -sf -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+              "https://quay.io/v2/${NS}/ttl/manifests/$1" \
+              || echo "000"
+          }
 
-          if [ "$HTTP" = "200" ]; then
-            echo "Quay.io: ${VERSION} present"
-            echo "missing=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Quay.io: ${VERSION} missing (HTTP ${HTTP})"
-            echo "missing=true" >> "$GITHUB_OUTPUT"
-          fi
+          MISSING=false
+          for TAG in "${VERSION}" "${VERSION_BARE}" "latest"; do
+            HTTP=$(check_tag "$TAG")
+            if [ "$HTTP" = "200" ]; then
+              echo "Quay.io: ${TAG} present"
+            else
+              echo "Quay.io: ${TAG} missing (HTTP ${HTTP})"
+              MISSING=true
+            fi
+          done
+          echo "missing=${MISSING}" >> "$GITHUB_OUTPUT"
 
-      # ── Trigger build if any configured registry is missing the version ───────
-      # force=false  → GHCR is also missing; build.yml will detect already_published=false
-      #               and run naturally.
-      # force=true   → GHCR already has the tag (already_published=true), but another
-      #               registry is missing; force bypasses the GHCR-only guard so
-      #               build.yml pushes to all registries.
+      # ── Trigger build if any configured registry is missing any expected tag ──
+      # force determination uses GHCR's versioned tag (vX.Y.Z) specifically:
+      #   versioned_missing=true  → already_published=false in build.yml → force=false
+      #   versioned_missing=false → already_published=true  in build.yml → force=true
       - name: Trigger build if any registry is missing
         env:
-          GH_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
-          VERSION:          ${{ steps.upstream.outputs.version }}
-          GHCR_MISSING:     ${{ steps.check-ghcr.outputs.missing }}
-          DOCKERHUB_MISSING: ${{ steps.check-dockerhub.outputs.missing }}
-          CODEBERG_MISSING:  ${{ steps.check-codeberg.outputs.missing }}
-          QUAY_MISSING:      ${{ steps.check-quay.outputs.missing }}
+          GH_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
+          VERSION:               ${{ steps.upstream.outputs.version }}
+          GHCR_MISSING:          ${{ steps.check-ghcr.outputs.missing }}
+          GHCR_VERSIONED_MISSING: ${{ steps.check-ghcr.outputs.versioned_missing }}
+          DOCKERHUB_MISSING:     ${{ steps.check-dockerhub.outputs.missing }}
+          CODEBERG_MISSING:      ${{ steps.check-codeberg.outputs.missing }}
+          QUAY_MISSING:          ${{ steps.check-quay.outputs.missing }}
         run: |
           ANY_MISSING=false
           [ "$GHCR_MISSING" = "true" ]      && ANY_MISSING=true
@@ -170,13 +208,16 @@ jobs:
           [ "$QUAY_MISSING" = "true" ]      && ANY_MISSING=true
 
           if [ "$ANY_MISSING" = "false" ]; then
-            echo "Version ${VERSION} present in all configured registries — nothing to do"
+            echo "All tags present in all configured registries — nothing to do"
             exit 0
           fi
 
-          # If GHCR already has the tag, build.yml's already_published guard would
-          # skip the build — use force=true to override it.
-          if [ "$GHCR_MISSING" = "true" ]; then
+          # force=false: GHCR's versioned tag is missing → build.yml detects
+          #              already_published=false and runs naturally.
+          # force=true:  GHCR's versioned tag exists (already_published=true) but
+          #              a bare/latest tag or another registry is missing → override
+          #              the guard so build.yml pushes all tags to all registries.
+          if [ "$GHCR_VERSIONED_MISSING" = "true" ]; then
             FORCE=false
           else
             FORCE=true
