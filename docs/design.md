@@ -51,7 +51,7 @@ The download and SHA256 verification runs in a separate `downloader` stage with 
 
 ### Checksum verification
 
-The downloader fetches `SHA256SUMS` from the same upstream release and runs `sha256sum -c` before extracting the binary. A mismatch causes the build to fail immediately.
+The downloader fetches `SHA256SUMS` from the same upstream release. Before running `sha256sum -c`, it uses `awk '$2==asset'` to extract the exact line for the expected filename and explicitly fails with a clear error message if the entry is not found. This catches format changes (renamed assets, missing entries) before `sha256sum` sees an empty input. A checksum mismatch also causes the build to fail immediately.
 
 ---
 
@@ -69,17 +69,19 @@ Shortening the cron (e.g. every 15 minutes) in `build.yml` directly would mean s
 watch-upstream.yml  (every 15 min)
     │
     ├─ query GitHub API → latest lance0/ttl tag
-    ├─ check configured registries for that tag
-    │     ├─ all present → exit (nothing to do)
-    │     └─ any missing → gh workflow run build.yml \
-    │                        --field version=vX.Y.Z \
-    │                        --field force=<true|false>
+    ├─ check vX.Y.Z, X.Y.Z, latest across all configured registries
+    │     ├─ all tags present → exit (nothing to do)
+    │     └─ any tag missing → gh workflow run build.yml \
+    │                            --field version=vX.Y.Z \
+    │                            --field force=<true|false> \
+    │                            --field publish_latest=true
     │
     └─ (build.yml is triggered only when needed)
 
 build.yml  (workflow_dispatch only — no schedule)
     │
-    ├─ check-version job: resolve + validate + normalize version, check GHCR
+    ├─ check-version job:  resolve + validate + normalize version, check GHCR
+    ├─ skip-summary job:   writes summary when build-and-push is skipped
     └─ build-and-push job: QEMU setup, multi-platform build, push + attestations
 ```
 
@@ -89,10 +91,12 @@ The watcher is lightweight by design: no checkout, no Docker setup, just a small
 
 `build.yml` uses GHCR as its internal source of truth for `already_published` — GHCR is controlled by the same `GITHUB_TOKEN` and needs no extra credentials. Docker Hub and the optional registries are push targets, not state sources for `build.yml`.
 
-The watcher, however, checks **all configured registries** independently. If any registry is missing the version tag — even if GHCR already has it — a build is triggered with the appropriate `force` value:
+The watcher, however, checks **all three expected tags** (`vX.Y.Z`, `X.Y.Z`, `latest`) in **every configured registry**. If any tag is missing from any registry, a build is triggered with the appropriate `force` value.
 
-- **GHCR missing** → `force=false`: `build.yml` will detect `already_published=false` and proceed naturally.
-- **GHCR present, another registry missing** → `force=true`: overrides the `already_published` guard so `build.yml` pushes to all registries instead of exiting early.
+The `force` decision is based on whether GHCR's **versioned tag** (`vX.Y.Z`) specifically is present — tracked via the `versioned_missing` output of the GHCR check step:
+
+- **`versioned_missing=true`** → `force=false`: `build.yml` will detect `already_published=false` and proceed naturally.
+- **`versioned_missing=false`** (bare/latest tag or another registry missing) → `force=true`: overrides the `already_published` guard so `build.yml` pushes all tags to all registries.
 
 This means a deleted Docker Hub tag, Codeberg tag, or Quay.io tag is automatically detected and recovered within 15 minutes without manual intervention.
 

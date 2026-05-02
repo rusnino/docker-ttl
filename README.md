@@ -58,7 +58,7 @@ process — it does not give full root or `--privileged` access.
 
 Two GitHub Actions workflows keep the image current:
 
-- **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. Checks all configured registries and triggers a build if any is missing the version.
+- **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. Checks all three expected tags (`vX.Y.Z`, `X.Y.Z`, `latest`) across all configured registries and triggers a build if any tag is missing from any registry.
 - **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version). Manual runs are idempotent by default; set `force=true` to rebuild an already-existing version. When rebuilding an old version, also set `publish_latest=false` to avoid rolling back the `latest` tag.
 
 New upstream releases are typically picked up within 15 minutes.
@@ -80,8 +80,7 @@ Actions** before the first workflow run.
 
 ### Optional (Codeberg + Quay.io)
 
-These registries are skipped automatically when the corresponding secrets are
-absent. Set them whenever you are ready to publish there.
+These registries are skipped automatically unless all three corresponding secrets are set. Set all three whenever you are ready to publish there.
 
 | Secret               | Description                                              |
 |----------------------|----------------------------------------------------------|

@@ -36,7 +36,7 @@ The split between `downloader` and the runtime bases is intentional: it keeps `c
 
 ### `watch-upstream.yml` — upstream poller
 
-Runs every 15 minutes. Queries the upstream GitHub API for the latest `lance0/ttl` release, checks all configured registries for the versioned manifest, and dispatches `build.yml` when any configured registry is missing that version.
+Runs every 15 minutes. Queries the upstream GitHub API for the latest `lance0/ttl` release, checks all three expected tags (`vX.Y.Z`, `X.Y.Z`, `latest`) across all configured registries, and dispatches `build.yml` when any tag is missing from any registry.
 
 ### `build.yml` — build and push
 
