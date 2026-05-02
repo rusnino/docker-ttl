@@ -13,7 +13,7 @@ building and publishing multi-platform OCI images from the upstream
 | Registry       | Image                                      |
 |----------------|--------------------------------------------|
 | Docker Hub     | `docker.io/<your-namespace>/ttl`           |
-| GHCR           | `ghcr.io/rusnino/ttl`                      |
+| GHCR           | `ghcr.io/<your-namespace>/ttl`             |
 | Codeberg       | `codeberg.org/<your-namespace>/ttl`        |
 | Quay.io        | `quay.io/<your-namespace>/ttl`             |
 
