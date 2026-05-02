@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write  # needed to create GitHub Releases
   packages: write  # needed for ghcr.io push
 
 jobs:
@@ -303,6 +303,57 @@ jobs:
           )
           [ "${PUBLISH_LATEST}" = "true" ] && ARGS+=(--tag "${TARGET}:latest")
           docker buildx imagetools create "${ARGS[@]}" "${SOURCE}"
+
+      # ── GitHub Release ───────────────────────────────────────────────────────
+      # Only created for new versions (already_published=false before this build).
+      # Forced rebuilds of existing versions skip release creation.
+      - name: Create GitHub Release
+        if: needs.check-version.outputs.already_published != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION:  ${{ needs.check-version.outputs.version }}
+          OWNER:    ${{ github.repository_owner }}
+        run: |
+          # Collect per-platform and index digests from GHCR
+          INDEX_DIGEST=$(docker buildx imagetools inspect \
+            "ghcr.io/${OWNER}/ttl:${VERSION}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')
+
+          PLATFORM_DIGESTS=$(docker buildx imagetools inspect \
+            "ghcr.io/${OWNER}/ttl:${VERSION}" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}  {{.Digest}}{{"\n"}}{{end}}')
+
+          cat > digests.txt <<EOF
+          # ttl ${VERSION} — Image Digests
+          # Use these to pin the image to an exact, immutable layer set.
+          #
+          # docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@sha256:<index-digest> 1.1.1.1
+
+          multi-platform index  ${INDEX_DIGEST}
+          ${PLATFORM_DIGESTS}
+          EOF
+
+          NOTES="Packages upstream [ttl ${VERSION}](https://github.com/lance0/ttl/releases/tag/${VERSION}).
+
+          ## Pull
+
+          \`\`\`sh
+          docker pull ghcr.io/${OWNER}/ttl:${VERSION}
+          docker pull ghcr.io/${OWNER}/ttl:latest
+          \`\`\`
+
+          ## Pin by digest (recommended for production)
+
+          \`\`\`sh
+          docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@${INDEX_DIGEST} 1.1.1.1
+          \`\`\`
+
+          Full per-platform digests are in the attached \`digests.txt\`."
+
+          gh release create "${VERSION}" digests.txt \
+            --repo "${{ github.repository }}" \
+            --title "ttl ${VERSION}" \
+            --notes "${NOTES}"
 
       # ── Step summary ──────────────────────────────────────────────────────────
       - name: Write build summary

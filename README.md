@@ -30,6 +30,17 @@ docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1 -c 5 --report
 docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl:v0.19.0 8.8.8.8
 ```
 
+### Docker Compose
+
+```yaml
+services:
+  ttl:
+    image: ghcr.io/rusnino/ttl:latest
+    cap_add:
+      - NET_RAW
+    command: ["1.1.1.1", "-c", "5", "--report"]
+```
+
 ### Why `--cap-add=NET_RAW`?
 
 `ttl` uses raw ICMP sockets to send and receive probe packets. On Linux,
