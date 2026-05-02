@@ -51,8 +51,8 @@ process — it does not give full root or `--privileged` access.
 
 | Platform      | Base image           | Upstream asset                                   |
 |---------------|----------------------|--------------------------------------------------|
-| `linux/amd64` | `alpine:latest`      | `ttl-x86_64-unknown-linux-musl.tar.gz` (static/musl) |
-| `linux/arm64` | `debian:bookworm-slim` | `ttl-aarch64-unknown-linux-gnu.tar.gz` (glibc)  |
+| `linux/amd64` | `alpine:3.21` (digest-pinned) | `ttl-x86_64-unknown-linux-musl.tar.gz` (static/musl) |
+| `linux/arm64` | `debian:bookworm-slim` (digest-pinned) | `ttl-aarch64-unknown-linux-gnu.tar.gz` (glibc)  |
 
 ## Update Policy
 

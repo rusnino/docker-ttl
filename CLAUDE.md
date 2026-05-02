@@ -25,8 +25,8 @@ docker run --rm --cap-add=NET_RAW ttl:local 1.1.1.1
 
 The Dockerfile is a three-stage build:
 
-1. **`runtime-amd64`** — `alpine:latest` (musl, no extra deps needed)
-2. **`runtime-arm64`** — `debian:bookworm-slim` (glibc; the upstream arm64 binary is glibc-linked)
+1. **`runtime-amd64`** — `alpine:3.21` pinned by digest (musl, no extra deps needed)
+2. **`runtime-arm64`** — `debian:bookworm-slim` pinned by digest (glibc; the upstream arm64 binary is glibc-linked)
 3. **`downloader`** — runs on `$BUILDPLATFORM` (never needs QEMU). Downloads the correct upstream release asset for `$TARGETARCH`, verifies its SHA256 against upstream's `SHA256SUMS` file, and extracts the binary.
 4. **Final stage** — resolves to `runtime-${TARGETARCH}`, copies `/tmp/ttl-bin` from `downloader`.
 

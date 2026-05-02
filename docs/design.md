@@ -19,11 +19,11 @@ The upstream project ships two distinct binary flavors:
 
 A single Alpine base image works for amd64 (Alpine uses musl), but Alpine lacks glibc for arm64. Using a glibc compatibility shim (`gcompat`) on Alpine was tried and caused subtle runtime failures. Debian slim has glibc natively and is the correct base for arm64.
 
-### Solution: per-arch runtime bases
+### Solution: per-arch runtime bases, digest-pinned
 
 ```
-FROM alpine:latest        AS runtime-amd64
-FROM debian:bookworm-slim AS runtime-arm64
+FROM alpine:3.21@sha256:<digest>        AS runtime-amd64
+FROM debian:bookworm-slim@sha256:<digest> AS runtime-arm64
 ```
 
 The final stage resolves the correct base at build time:
@@ -33,6 +33,13 @@ FROM runtime-${TARGETARCH}
 ```
 
 Docker substitutes `TARGETARCH` (`amd64` or `arm64`) and selects the appropriate base. This is a native Docker Buildx feature — no shell conditionals needed.
+
+Both bases are pinned by multi-platform manifest digest (not just tag) so that a forced rebuild of the same `ttl` version always produces an identical rootfs. Without pinning, `alpine:latest` or even `alpine:3.21` can silently update between runs, making two images with the same tag differ. To rotate to a new base version, update the digests in the Dockerfile:
+
+```sh
+docker buildx imagetools inspect alpine:3.21 --format '{{json .Manifest}}' | jq -r '.digest'
+docker buildx imagetools inspect debian:bookworm-slim --format '{{json .Manifest}}' | jq -r '.digest'
+```
 
 ### Downloader stage
 

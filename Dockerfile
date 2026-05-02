@@ -8,11 +8,14 @@ ARG TTL_VERSION
 # amd64: Alpine  — upstream ships a musl/static binary (zero runtime deps).
 # arm64: Debian slim — upstream ships a glibc-linked binary; Debian has glibc
 #        natively, so no compatibility shim is needed.
-FROM alpine:latest        AS runtime-amd64
-FROM debian:bookworm-slim AS runtime-arm64
+# Digests pin the exact multi-platform manifest; update via:
+#   docker buildx imagetools inspect alpine:3.21 --format '{{json .Manifest}}' | jq -r '.digest'
+#   docker buildx imagetools inspect debian:bookworm-slim --format '{{json .Manifest}}' | jq -r '.digest'
+FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d        AS runtime-amd64
+FROM debian:bookworm-slim@sha256:f9c6a2fd2ddbc23e336b6257a5245e31f996953ef06cd13a59fa0a1df2d5c252 AS runtime-arm64
 
 # ── Downloader (runs on build machine's native arch, never needs QEMU) ───────
-FROM --platform=$BUILDPLATFORM alpine:3.21 AS downloader
+FROM --platform=$BUILDPLATFORM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d AS downloader
 
 ARG TTL_VERSION
 ARG TARGETARCH
