@@ -34,7 +34,7 @@ RUN set -eux; \
     curl -fsSL "${BASE_URL}/SHA256SUMS"  -o /tmp/ttl-install/SHA256SUMS; \
     curl -fsSL "${BASE_URL}/${ASSET}"    -o "/tmp/ttl-install/${ASSET}"; \
     cd /tmp/ttl-install; \
-    grep "${ASSET}" SHA256SUMS | sha256sum -c -; \
+    awk -v asset="${ASSET}" '$2==asset{print}' SHA256SUMS | sha256sum -c -; \
     mkdir -p /tmp/ttl-extract; \
     tar -xzf "${ASSET}" -C /tmp/ttl-extract; \
     BIN="$(find /tmp/ttl-extract -type f -name 'ttl' | head -1)"; \
