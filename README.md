@@ -58,8 +58,8 @@ process — it does not give full root or `--privileged` access.
 
 Two GitHub Actions workflows keep the image current:
 
-- **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. If the latest release is not yet in GHCR, it triggers a build automatically.
-- **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version).
+- **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. Checks all configured registries and triggers a build if any is missing the version.
+- **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version). Manual runs are idempotent by default; set `force=true` to rebuild and republish an already-existing version (useful for base digest rotation or integrity re-checks).
 
 New upstream releases are typically picked up within 15 minutes.
 
