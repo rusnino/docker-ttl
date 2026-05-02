@@ -6,6 +6,10 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
+concurrency:
+  group: watch-upstream
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: read   # needed to exchange GITHUB_TOKEN for a GHCR pull token

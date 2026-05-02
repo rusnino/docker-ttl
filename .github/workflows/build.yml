@@ -12,6 +12,10 @@ on:
         required: false
         default: 'false'
 
+concurrency:
+  group: ttl-build-${{ inputs.version || 'latest' }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write  # needed for ghcr.io push
