@@ -64,4 +64,5 @@ jobs:
         run: |
           gh workflow run build.yml \
             --repo "${{ github.repository }}" \
-            --field version="${VERSION}"
+            --field version="${VERSION}" \
+            --field force=false

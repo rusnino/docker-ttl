@@ -7,6 +7,10 @@ on:
         description: 'ttl version to build (e.g. v0.19.0). Leave empty to use latest upstream release.'
         required: false
         default: ''
+      force:
+        description: 'Rebuild even if the version is already published (true = forced rebuild, false = idempotent).'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
@@ -80,14 +84,14 @@ jobs:
           fi
 
   # ── Job 2: build and push ────────────────────────────────────────────────────
-  # On schedule:          skip entirely when already_published=true.
-  # On workflow_dispatch: always build, even if the tag already exists
-  #                       (useful for forced rebuilds and testing).
+  # Runs when the version is not yet published, OR when force=true.
+  # The watcher always passes force=false, so it stays idempotent.
+  # Manual UI triggers default to force=false but can set it to true for rebuilds.
   build-and-push:
     needs: check-version
     if: >-
       needs.check-version.outputs.already_published != 'true' ||
-      github.event_name == 'workflow_dispatch'
+      inputs.force == 'true'
     runs-on: ubuntu-latest
     # secrets context is not available in step-level if: conditions.
     # Map secret presence to plain env booleans, which ARE allowed in step if:.

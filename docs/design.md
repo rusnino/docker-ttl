@@ -84,9 +84,17 @@ The watcher and `build.yml` both check GHCR (not Docker Hub) to determine whethe
 
 If the GHCR token exchange fails (network issue, new repo not yet visible), both the watcher and `build.yml` default to `already_published=false` and proceed with the build. This prevents a transient API failure from silently skipping a real new release.
 
-### `workflow_dispatch` always builds
+### `force` input separates forced rebuild from watcher trigger
 
-When `build.yml` is triggered manually (via the Actions UI or the watcher), the `build-and-push` job runs regardless of `already_published`. This enables forced rebuilds — useful for testing, base image updates, or recovering from a failed previous run.
+`build.yml` exposes a `force` boolean input (default `false`). The `build-and-push` job condition is:
+
+```yaml
+if: >-
+  needs.check-version.outputs.already_published != 'true' ||
+  inputs.force == 'true'
+```
+
+The watcher always passes `--field force=false`, so it remains idempotent even though it uses `workflow_dispatch`. A human triggering the workflow from the Actions UI can set `force=true` to rebuild an already-published version — useful for base image updates, binary integrity checks, or recovering from a partial push.
 
 ---
 
