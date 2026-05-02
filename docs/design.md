@@ -85,7 +85,7 @@ build.yml  (workflow_dispatch only — no schedule)
     └─ build-and-push job: QEMU setup, multi-platform build, push + attestations
 ```
 
-The watcher is lightweight by design: no checkout, no Docker setup, just a small set of registry API calls. The full build job only runs when any configured registry is missing the version.
+The watcher is lightweight by design: no checkout, no Docker setup, just a small set of registry API calls. The full build job only runs when any expected tag is missing from any configured registry.
 
 ### Registry checks and source of truth
 
@@ -116,7 +116,7 @@ if: >-
   inputs.force == 'true'
 ```
 
-The watcher passes `force=false` when GHCR is missing (build runs naturally via `already_published=false`) and `force=true` when GHCR already has the tag but another registry is missing (forces `build-and-push` to run and push to all registries).
+The watcher passes `force=false` when GHCR's versioned tag (`vX.Y.Z`) is missing (build runs naturally via `already_published=false`) and `force=true` when GHCR has `vX.Y.Z` but a bare/latest tag or another registry is missing (forces `build-and-push` to run and push all tags to all registries).
 
 **`publish_latest`** (default `true`) — controls whether the `latest` tag is included in the push. The watcher always passes `publish_latest=true` (it only dispatches for the current upstream latest). For manual forced rebuilds of old versions, set `publish_latest=false` to avoid rolling back the `latest` tag to an older release.
 
