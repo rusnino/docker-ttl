@@ -8,7 +8,7 @@ ARG TTL_VERSION
 # amd64: Alpine  — upstream ships a musl/static binary (zero runtime deps).
 # arm64: Debian slim — upstream ships a glibc-linked binary; Debian has glibc
 #        natively, so no compatibility shim is needed.
-FROM alpine:3.21          AS runtime-amd64
+FROM alpine:latest        AS runtime-amd64
 FROM debian:bookworm-slim AS runtime-arm64
 
 # ── Downloader (runs on build machine's native arch, never needs QEMU) ───────
