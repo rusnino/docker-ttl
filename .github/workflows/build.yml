@@ -305,14 +305,14 @@ jobs:
           docker buildx imagetools create "${ARGS[@]}" "${SOURCE}"
 
       # ── GitHub Release ───────────────────────────────────────────────────────
-      # Only created for new versions (already_published=false before this build).
-      # Forced rebuilds of existing versions skip release creation.
-      - name: Create GitHub Release
-        if: needs.check-version.outputs.already_published != 'true'
+      # Created for new versions and updated for forced rebuilds (new digests).
+      - name: Create or update GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION:  ${{ needs.check-version.outputs.version }}
-          OWNER:    ${{ github.repository_owner }}
+          GH_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          VERSION:        ${{ needs.check-version.outputs.version }}
+          OWNER:          ${{ github.repository_owner }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          REPO:           ${{ github.repository }}
         run: |
           # Collect per-platform and index digests from GHCR
           INDEX_DIGEST=$(docker buildx imagetools inspect \
@@ -323,37 +323,61 @@ jobs:
             "ghcr.io/${OWNER}/ttl:${VERSION}" \
             --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}  {{.Digest}}{{"\n"}}{{end}}')
 
-          cat > digests.txt <<EOF
-          # ttl ${VERSION} — Image Digests
-          # Use these to pin the image to an exact, immutable layer set.
-          #
-          # docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@sha256:<index-digest> 1.1.1.1
+          cat > digests.txt <<DIGEST_EOF
+# ttl ${VERSION} — Image Digests
+# Use these to pin the image to an exact, immutable layer set.
+#
+# docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@<index-digest> 1.1.1.1
 
-          multi-platform index  ${INDEX_DIGEST}
-          ${PLATFORM_DIGESTS}
-          EOF
+multi-platform index  ${INDEX_DIGEST}
+${PLATFORM_DIGESTS}
+DIGEST_EOF
+
+          # Build pull section — omit latest if publish_latest=false
+          if [ "${PUBLISH_LATEST}" = "true" ]; then
+            PULL_CMDS="\`\`\`sh
+docker pull ghcr.io/${OWNER}/ttl:${VERSION}
+docker pull ghcr.io/${OWNER}/ttl:latest
+\`\`\`"
+          else
+            PULL_CMDS="\`\`\`sh
+docker pull ghcr.io/${OWNER}/ttl:${VERSION}
+\`\`\`
+> \`latest\` was not updated in this build."
+          fi
 
           NOTES="Packages upstream [ttl ${VERSION}](https://github.com/lance0/ttl/releases/tag/${VERSION}).
 
-          ## Pull
+## Pull
 
-          \`\`\`sh
-          docker pull ghcr.io/${OWNER}/ttl:${VERSION}
-          docker pull ghcr.io/${OWNER}/ttl:latest
-          \`\`\`
+${PULL_CMDS}
 
-          ## Pin by digest (recommended for production)
+## Pin by digest (recommended for production)
 
-          \`\`\`sh
-          docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@${INDEX_DIGEST} 1.1.1.1
-          \`\`\`
+\`\`\`sh
+docker run --rm --cap-add=NET_RAW ghcr.io/${OWNER}/ttl@${INDEX_DIGEST} 1.1.1.1
+\`\`\`
 
-          Full per-platform digests are in the attached \`digests.txt\`."
+Full per-platform digests are in the attached \`digests.txt\`."
 
-          gh release create "${VERSION}" digests.txt \
-            --repo "${{ github.repository }}" \
-            --title "ttl ${VERSION}" \
-            --notes "${NOTES}"
+          if gh release view "${VERSION}" --repo "${REPO}" &>/dev/null; then
+            # Release exists — update notes and replace digests.txt asset
+            gh release edit "${VERSION}" --repo "${REPO}" --notes "${NOTES}"
+
+            # Delete the old digests.txt asset (if present) and upload fresh one
+            ASSET_ID=$(gh api "repos/${REPO}/releases/tags/${VERSION}" \
+              --jq '.assets[] | select(.name=="digests.txt") | .id')
+            if [ -n "$ASSET_ID" ]; then
+              gh api --method DELETE "repos/${REPO}/releases/assets/${ASSET_ID}"
+            fi
+            gh release upload "${VERSION}" digests.txt --repo "${REPO}"
+          else
+            # New release
+            gh release create "${VERSION}" digests.txt \
+              --repo "${REPO}" \
+              --title "ttl ${VERSION}" \
+              --notes "${NOTES}"
+          fi
 
       # ── Step summary ──────────────────────────────────────────────────────────
       - name: Write build summary
