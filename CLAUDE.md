@@ -36,15 +36,15 @@ The split between `downloader` and the runtime bases is intentional: it keeps `c
 
 ### `watch-upstream.yml` — upstream poller
 
-Runs every 15 minutes. Queries the GitHub API for the latest `lance0/ttl` release, checks GHCR for the versioned manifest, and dispatches `build.yml` only when the version is not yet published. Requires `actions: write` to trigger `workflow_dispatch` via `gh workflow run`.
+Runs every 15 minutes. Queries the upstream GitHub API for the latest `lance0/ttl` release, checks all configured registries for the versioned manifest, and dispatches `build.yml` when any configured registry is missing that version.
 
 ### `build.yml` — build and push
 
 Triggered exclusively via `workflow_dispatch` (by the watcher or manually). Two jobs:
 
-**`check-version`** — resolves the version (manual input or latest upstream), normalizes to both `vX.Y.Z` and `X.Y.Z` forms, checks GHCR. Outputs: `version`, `version_bare`, `already_published`.
+**`check-version`** — resolves the version (manual input or latest upstream), validates it against `^v[0-9]+\.[0-9]+\.[0-9]+`, normalizes to both `vX.Y.Z` and `X.Y.Z` forms, checks GHCR. Outputs: `version`, `version_bare`, `already_published`.
 
-**`build-and-push`** — skipped when `already_published=true` unless triggered manually (useful for forced rebuilds). Builds for `linux/amd64,linux/arm64` and pushes to Docker Hub + GHCR. Then optionally mirrors to Codeberg and Quay.io via `docker buildx imagetools create` (no rebuild).
+**`build-and-push`** — runs when GHCR does not have the version yet, or when `force=true`. Manual UI triggers default to `force=false`; set `force=true` for explicit rebuilds. Builds for `linux/amd64,linux/arm64` and pushes to Docker Hub + GHCR with SBOM and provenance attestations. Then optionally mirrors to Codeberg and Quay.io via `docker buildx imagetools create` (no rebuild).
 
 Key constraint: `secrets` context is not available in step-level `if:` conditions — optional registry presence is mapped to env booleans (`HAS_CODEBERG`, `HAS_QUAY`) in the job `env:` block.
 
