@@ -307,6 +307,7 @@ jobs:
       # ── GitHub Release ───────────────────────────────────────────────────────
       # Created for new versions and updated for forced rebuilds (new digests).
       - name: Create or update GitHub Release
+        id: github-release
         env:
           GH_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
           VERSION:        ${{ needs.check-version.outputs.version }}
@@ -377,6 +378,7 @@ jobs:
           CODEBERG_PUSH:  ${{ steps.push-codeberg.outcome }}
           QUAY_LOGIN:     ${{ steps.quay-login.outcome }}
           QUAY_PUSH:      ${{ steps.push-quay.outcome }}
+          RELEASE:        ${{ steps.github-release.outcome }}
         run: |
           outcome_icon() {
             case "$1" in
@@ -415,8 +417,9 @@ jobs:
 
           | Registry   | Status |
           |------------|--------|
-          | Docker Hub | $(outcome_icon "$PRIMARY") |
-          | GHCR       | $(outcome_icon "$PRIMARY") |
-          | Codeberg   | $(optional_outcome "$CODEBERG_LOGIN" "$CODEBERG_PUSH") |
-          | Quay.io    | $(optional_outcome "$QUAY_LOGIN" "$QUAY_PUSH") |
+          | Docker Hub     | $(outcome_icon "$PRIMARY") |
+          | GHCR           | $(outcome_icon "$PRIMARY") |
+          | Codeberg       | $(optional_outcome "$CODEBERG_LOGIN" "$CODEBERG_PUSH") |
+          | Quay.io        | $(optional_outcome "$QUAY_LOGIN" "$QUAY_PUSH") |
+          | GitHub Release | $(outcome_icon "$RELEASE") |
           EOF
