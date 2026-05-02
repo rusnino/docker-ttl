@@ -66,22 +66,24 @@ Shortening the cron (e.g. every 15 minutes) in `build.yml` directly would mean s
 ### Solution: watcher + build separation
 
 ```
-watch-upstream.yml  (every 15 min, ~10 s per run when no new release)
+watch-upstream.yml  (every 15 min)
     │
     ├─ query GitHub API → latest lance0/ttl tag
-    ├─ check GHCR manifest for that tag
-    │     ├─ exists  → exit (nothing to do)
-    │     └─ missing → gh workflow run build.yml --field version=vX.Y.Z
+    ├─ check configured registries for that tag
+    │     ├─ all present → exit (nothing to do)
+    │     └─ any missing → gh workflow run build.yml \
+    │                        --field version=vX.Y.Z \
+    │                        --field force=<true|false>
     │
     └─ (build.yml is triggered only when needed)
 
 build.yml  (workflow_dispatch only — no schedule)
     │
-    ├─ check-version job: resolve + normalize version, check GHCR
-    └─ build-and-push job: QEMU setup, multi-platform build, push
+    ├─ check-version job: resolve + validate + normalize version, check GHCR
+    └─ build-and-push job: QEMU setup, multi-platform build, push + attestations
 ```
 
-The watcher is lightweight by design: no checkout, no Docker setup, just two API calls. The full build job only runs when a new version is confirmed missing from GHCR.
+The watcher is lightweight by design: no checkout, no Docker setup, just a small set of registry API calls. The full build job only runs when any configured registry is missing the version.
 
 ### Registry checks and source of truth
 
