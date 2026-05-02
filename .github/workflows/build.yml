@@ -7,9 +7,6 @@ on:
         description: 'ttl version to build (e.g. v0.19.0). Leave empty to use latest upstream release.'
         required: false
         default: ''
-  schedule:
-    # Run every 6 hours to pick up new upstream releases automatically
-    - cron: '0 */6 * * *'
 
 permissions:
   contents: read
