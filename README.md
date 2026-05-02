@@ -108,6 +108,14 @@ These registries are skipped automatically unless all three corresponding secret
 > to set it to **Public** in the Quay.io settings afterward if you want a
 > public image.
 
+## Releases
+
+Each published version creates a [GitHub Release](https://github.com/rusnino/docker-ttl/releases) with:
+- Release notes linking to the upstream changelog
+- `digests.txt` — multi-platform manifest digest and per-platform digests for reproducible pinning
+
+Forced rebuilds (e.g. after a base image rotation) update the existing release with fresh digests.
+
 ## Security
 
 - Release binaries are downloaded from the official upstream GitHub Releases
@@ -117,7 +125,7 @@ These registries are skipped automatically unless all three corresponding secret
 - License files for both this wrapper (`LICENSE`) and the upstream binary (`LICENSES/`) are included inside the image at `/usr/share/licenses/`.
 - SBOM and provenance attestations are attached to every published image as OCI referrers.
 - No secrets or credentials are baked into the image or the repository.
-- For production use, pin images by digest rather than tag:
+- For production use, pin images by digest rather than tag (digests are available in the GitHub Release):
   ```sh
   docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl@sha256:<digest> 1.1.1.1
   ```

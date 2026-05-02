@@ -83,6 +83,7 @@ build.yml  (workflow_dispatch only — no schedule)
     ├─ check-version job:  resolve + validate + normalize version, check GHCR
     ├─ skip-summary job:   writes summary when build-and-push is skipped
     └─ build-and-push job: QEMU setup, multi-platform build, push + attestations
+                           + create or update GitHub Release with digests.txt
 ```
 
 The watcher is lightweight by design: no checkout, no Docker setup, just a small set of registry API calls. The full build job only runs when any expected tag is missing from any configured registry.
@@ -124,6 +125,17 @@ The watcher passes `force=false` when GHCR's versioned tag (`vX.Y.Z`) is missing
 force=true  publish_latest=false  →  rebuilds vX.Y.Z tags only, latest untouched
 force=true  publish_latest=true   →  rebuilds and moves latest (dangerous for old versions)
 ```
+
+### GitHub Releases
+
+Every successful `build-and-push` run creates or updates a GitHub Release tagged `vX.Y.Z`:
+
+- **New version** (`already_published=false`): `gh release create` with release notes and `digests.txt`.
+- **Forced rebuild** (`force=true`, version already existed): `gh release edit` to refresh notes, then delete the old `digests.txt` asset via API and upload a fresh one with current digests.
+
+The `digests.txt` asset contains the multi-platform manifest index digest and per-platform digests (amd64, arm64) fetched from GHCR via `docker buildx imagetools inspect` after the push. This lets users pin by digest without querying the registry directly.
+
+Release notes omit the `latest` pull command when `publish_latest=false`, with an explicit note that `latest` was not updated in this build.
 
 ### Observability: step summary and skip summary
 
