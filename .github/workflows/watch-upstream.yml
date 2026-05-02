@@ -223,6 +223,7 @@ jobs:
             FORCE=true
           fi
 
+          echo "Missing flags: ghcr=${GHCR_MISSING}, dockerhub=${DOCKERHUB_MISSING}, codeberg=${CODEBERG_MISSING}, quay=${QUAY_MISSING}"
           echo "Triggering build for ${VERSION} (force=${FORCE})"
           gh workflow run build.yml \
             --repo "${{ github.repository }}" \
