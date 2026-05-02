@@ -16,16 +16,15 @@ permissions:
   packages: write  # needed for ghcr.io push
 
 jobs:
-  build-and-push:
+  # ── Job 1: resolve version and check whether it is already published ────────
+  check-version:
     runs-on: ubuntu-latest
-    # secrets context is not available in step-level if: conditions.
-    # Map secret presence to plain env booleans, which ARE allowed in step if:.
-    env:
-      HAS_CODEBERG: ${{ secrets.CODEBERG_TOKEN != '' }}
-      HAS_QUAY:     ${{ secrets.QUAY_TOKEN != '' }}
+    outputs:
+      version:           ${{ steps.version.outputs.version }}
+      version_bare:      ${{ steps.version.outputs.version_bare }}
+      already_published: ${{ steps.check.outputs.already_published }}
 
     steps:
-      # ── Version resolution ────────────────────────────────────────────────
       - name: Determine version
         id: get-version
         run: |
@@ -49,7 +48,57 @@ jobs:
           echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
           echo "version_bare=${VERSION_BARE}" >> "$GITHUB_OUTPUT"
 
-      # ── Checkout & builder setup ──────────────────────────────────────────
+      - name: Check if already published in GHCR
+        id: check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OWNER:   ${{ github.repository_owner }}
+        run: |
+          # Exchange GITHUB_TOKEN for a short-lived GHCR pull token.
+          # If this fails (network issue, new repo not yet visible) we default
+          # to "not published" so the build always proceeds safely.
+          GHCR_TOKEN=$(curl -sf \
+            -u "${OWNER}:${{ secrets.GITHUB_TOKEN }}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${OWNER}/ttl:pull" \
+            | jq -r '.token' || echo "")
+
+          if [ -z "$GHCR_TOKEN" ]; then
+            echo "Could not obtain GHCR token — assuming not published"
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GHCR_TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/${OWNER}/ttl/manifests/${VERSION}" \
+            || echo "000")
+
+          if [ "$HTTP" = "200" ]; then
+            echo "Image ${VERSION} already exists in GHCR — skipping scheduled build"
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Image ${VERSION} not found in GHCR (HTTP ${HTTP}) — will build"
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Job 2: build and push ────────────────────────────────────────────────────
+  # On schedule:          skip entirely when already_published=true.
+  # On workflow_dispatch: always build, even if the tag already exists
+  #                       (useful for forced rebuilds and testing).
+  build-and-push:
+    needs: check-version
+    if: >-
+      needs.check-version.outputs.already_published != 'true' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # secrets context is not available in step-level if: conditions.
+    # Map secret presence to plain env booleans, which ARE allowed in step if:.
+    env:
+      HAS_CODEBERG: ${{ secrets.CODEBERG_TOKEN != '' }}
+      HAS_QUAY:     ${{ secrets.QUAY_TOKEN != '' }}
+
+    steps:
       - uses: actions/checkout@v4
 
       - name: Set up QEMU
@@ -110,8 +159,8 @@ jobs:
             docker.io/${{ secrets.DOCKERHUB_NAMESPACE }}/ttl
             ghcr.io/${{ github.repository_owner }}/ttl
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ steps.version.outputs.version_bare }}
+            type=raw,value=${{ needs.check-version.outputs.version }}
+            type=raw,value=${{ needs.check-version.outputs.version_bare }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=ttl
@@ -129,7 +178,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            TTL_VERSION=${{ steps.version.outputs.version }}
+            TTL_VERSION=${{ needs.check-version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -141,8 +190,8 @@ jobs:
         if: ${{ steps.codeberg-login.outcome == 'success' }}
         continue-on-error: true
         env:
-          VERSION:      ${{ steps.version.outputs.version }}
-          VERSION_BARE: ${{ steps.version.outputs.version_bare }}
+          VERSION:      ${{ needs.check-version.outputs.version }}
+          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
           DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
           CODEBERG_NS:  ${{ secrets.CODEBERG_NAMESPACE }}
         run: |
@@ -158,8 +207,8 @@ jobs:
         if: ${{ steps.quay-login.outcome == 'success' }}
         continue-on-error: true
         env:
-          VERSION:      ${{ steps.version.outputs.version }}
-          VERSION_BARE: ${{ steps.version.outputs.version_bare }}
+          VERSION:      ${{ needs.check-version.outputs.version }}
+          VERSION_BARE: ${{ needs.check-version.outputs.version_bare }}
           DOCKERHUB_NS: ${{ secrets.DOCKERHUB_NAMESPACE }}
           QUAY_NS:      ${{ secrets.QUAY_NAMESPACE }}
         run: |
