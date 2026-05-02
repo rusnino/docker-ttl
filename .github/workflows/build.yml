@@ -143,6 +143,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ── Validate required secrets ─────────────────────────────────────────
+      - name: Validate required secrets
+        run: |
+          [ -n "${{ secrets.DOCKERHUB_USERNAME }}"  ] || { echo "ERROR: DOCKERHUB_USERNAME is not set"  >&2; exit 1; }
+          [ -n "${{ secrets.DOCKERHUB_TOKEN }}"     ] || { echo "ERROR: DOCKERHUB_TOKEN is not set"     >&2; exit 1; }
+          [ -n "${{ secrets.DOCKERHUB_NAMESPACE }}" ] || { echo "ERROR: DOCKERHUB_NAMESPACE is not set" >&2; exit 1; }
+
       # ── Registry logins ───────────────────────────────────────────────────
 
       # Required: Docker Hub (primary source for imagetools mirrors)
