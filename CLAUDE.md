@@ -23,7 +23,7 @@ docker run --rm --cap-add=NET_RAW ttl:local 1.1.1.1
 
 ## Dockerfile architecture
 
-The Dockerfile is a three-stage build:
+The Dockerfile uses four `FROM` stages:
 
 1. **`runtime-amd64`** — `alpine:3.21` pinned by digest (musl, no extra deps needed)
 2. **`runtime-arm64`** — `debian:bookworm-slim` pinned by digest (glibc; the upstream arm64 binary is glibc-linked)
