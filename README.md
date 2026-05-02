@@ -59,7 +59,7 @@ process — it does not give full root or `--privileged` access.
 Two GitHub Actions workflows keep the image current:
 
 - **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. Checks all configured registries and triggers a build if any is missing the version.
-- **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version). Manual runs are idempotent by default; set `force=true` to rebuild and republish an already-existing version (useful for base digest rotation or integrity re-checks).
+- **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version). Manual runs are idempotent by default; set `force=true` to rebuild an already-existing version. When rebuilding an old version, also set `publish_latest=false` to avoid rolling back the `latest` tag.
 
 New upstream releases are typically picked up within 15 minutes.
 
@@ -104,6 +104,8 @@ absent. Set them whenever you are ready to publish there.
   page and verified against the upstream `SHA256SUMS` file before installation.
   A checksum mismatch causes the build to fail.
 - `curl` is installed only in the downloader build stage and is not present in the final runtime image.
+- License files for both this wrapper (`LICENSE`) and the upstream binary (`LICENSES/`) are included inside the image at `/usr/share/licenses/`.
+- SBOM (CycloneDX) and SLSA provenance attestations are attached to every published image as OCI referrers.
 - No secrets or credentials are baked into the image or the repository.
 - For production use, pin images by digest rather than tag:
   ```sh
@@ -117,7 +119,7 @@ under the MIT License — see [LICENSE](LICENSE).
 
 The **`ttl` binary** distributed inside the container images is copyright
 lance0 and licensed under **MIT OR Apache-2.0**. Full upstream license texts
-are included in [`LICENSES/`](LICENSES/):
+are included in [`LICENSES/`](LICENSES/) and also shipped inside every image at `/usr/share/licenses/ttl/`:
 
 - [`LICENSES/upstream-MIT.txt`](LICENSES/upstream-MIT.txt)
 - [`LICENSES/upstream-APACHE-2.0.txt`](LICENSES/upstream-APACHE-2.0.txt)

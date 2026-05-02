@@ -40,13 +40,15 @@ Runs every 15 minutes. Queries the upstream GitHub API for the latest `lance0/tt
 
 ### `build.yml` — build and push
 
-Triggered exclusively via `workflow_dispatch` (by the watcher or manually). Two jobs:
+Triggered exclusively via `workflow_dispatch` (by the watcher or manually). Three jobs:
 
 **`check-version`** — resolves the version (manual input or latest upstream), validates it against `^v[0-9]+\.[0-9]+\.[0-9]+`, normalizes to both `vX.Y.Z` and `X.Y.Z` forms, checks GHCR. Outputs: `version`, `version_bare`, `already_published`.
 
-**`build-and-push`** — runs when GHCR does not have the version yet, or when `force=true`. Manual UI triggers default to `force=false`; set `force=true` for explicit rebuilds. Builds for `linux/amd64,linux/arm64` and pushes to Docker Hub + GHCR with SBOM and provenance attestations. Then optionally mirrors to Codeberg and Quay.io via `docker buildx imagetools create` (no rebuild).
+**`skip-summary`** — runs only when `build-and-push` is skipped (`already_published=true` and `force=false`). Writes a `GITHUB_STEP_SUMMARY` explaining the skip and how to force a rebuild.
 
-Key constraint: `secrets` context is not available in step-level `if:` conditions — optional registry presence is mapped to env booleans (`HAS_CODEBERG`, `HAS_QUAY`) in the job `env:` block.
+**`build-and-push`** — runs when GHCR does not have the version yet, or when `force=true`. Key inputs: `force` (default `false`) bypasses the `already_published` guard; `publish_latest` (default `true`) controls whether the `latest` tag is pushed — set to `false` when rebuilding an old version to avoid rolling back `latest`. Builds for `linux/amd64,linux/arm64` with SBOM and SLSA provenance attestations, pushes to Docker Hub + GHCR, then optionally mirrors to Codeberg and Quay.io via `docker buildx imagetools create` (no rebuild). Writes a per-registry outcome table to `GITHUB_STEP_SUMMARY`.
+
+Key constraint: `secrets` context is not available in step-level `if:` conditions — optional registry presence is mapped to env booleans (`HAS_CODEBERG`, `HAS_QUAY`) in the job `env:` block. A registry is considered configured only when all three secrets (namespace + username + token) are set.
 
 ## Required secrets
 
