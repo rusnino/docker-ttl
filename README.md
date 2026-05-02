@@ -103,8 +103,7 @@ absent. Set them whenever you are ready to publish there.
 - Release binaries are downloaded from the official upstream GitHub Releases
   page and verified against the upstream `SHA256SUMS` file before installation.
   A checksum mismatch causes the build to fail.
-- `curl` is installed as a virtual Alpine package and removed immediately after
-  the download step; it is not present in the final image layer.
+- `curl` is installed only in the downloader build stage and is not present in the final runtime image.
 - No secrets or credentials are baked into the image or the repository.
 - For production use, pin images by digest rather than tag:
   ```sh
