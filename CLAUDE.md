@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-An unofficial, community-maintained Docker image for [`ttl`](https://github.com/lance0/ttl) — a traceroute-like CLI tool written in Rust. The repo contains only a Dockerfile and a GitHub Actions workflow; there is no application source code.
+An unofficial, community-maintained Docker image for [`ttl`](https://github.com/lance0/ttl) — a traceroute-like CLI tool written in Rust. The repo contains only a Dockerfile and two GitHub Actions workflows; there is no application source code.
 
 ## Local build
 
@@ -32,13 +32,19 @@ The Dockerfile is a three-stage build:
 
 The split between `downloader` and the runtime bases is intentional: it keeps `curl` out of the final image and avoids QEMU for the download step.
 
-## CI workflow (`.github/workflows/build.yml`)
+## CI workflows
 
-Two jobs:
+### `watch-upstream.yml` — upstream poller
 
-**`check-version`** — resolves the version (manual input or latest upstream GitHub release), normalizes it to both `vX.Y.Z` and `X.Y.Z` forms, and checks GHCR to see if the tag already exists. Outputs: `version`, `version_bare`, `already_published`.
+Runs every 15 minutes. Queries the GitHub API for the latest `lance0/ttl` release, checks GHCR for the versioned manifest, and dispatches `build.yml` only when the version is not yet published. Requires `actions: write` to trigger `workflow_dispatch` via `gh workflow run`.
 
-**`build-and-push`** — skipped on scheduled runs when `already_published=true`; always runs on `workflow_dispatch`. Builds for `linux/amd64,linux/arm64` and pushes to Docker Hub + GHCR. Then optionally mirrors (via `docker buildx imagetools create`, no rebuild) to Codeberg and Quay.io.
+### `build.yml` — build and push
+
+Triggered exclusively via `workflow_dispatch` (by the watcher or manually). Two jobs:
+
+**`check-version`** — resolves the version (manual input or latest upstream), normalizes to both `vX.Y.Z` and `X.Y.Z` forms, checks GHCR. Outputs: `version`, `version_bare`, `already_published`.
+
+**`build-and-push`** — skipped when `already_published=true` unless triggered manually (useful for forced rebuilds). Builds for `linux/amd64,linux/arm64` and pushes to Docker Hub + GHCR. Then optionally mirrors to Codeberg and Quay.io via `docker buildx imagetools create` (no rebuild).
 
 Key constraint: `secrets` context is not available in step-level `if:` conditions — optional registry presence is mapped to env booleans (`HAS_CODEBERG`, `HAS_QUAY`) in the job `env:` block.
 

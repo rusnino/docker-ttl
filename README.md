@@ -49,17 +49,19 @@ process — it does not give full root or `--privileged` access.
 
 ## Supported Platforms
 
-| Platform      | Upstream asset                              |
-|---------------|---------------------------------------------|
-| `linux/amd64` | `ttl-x86_64-unknown-linux-musl.tar.gz` (static/musl) |
-| `linux/arm64` | `ttl-aarch64-unknown-linux-gnu.tar.gz` (glibc — runs via `gcompat` on Alpine) |
+| Platform      | Base image           | Upstream asset                                   |
+|---------------|----------------------|--------------------------------------------------|
+| `linux/amd64` | `alpine:latest`      | `ttl-x86_64-unknown-linux-musl.tar.gz` (static/musl) |
+| `linux/arm64` | `debian:bookworm-slim` | `ttl-aarch64-unknown-linux-gnu.tar.gz` (glibc)  |
 
 ## Update Policy
 
-A scheduled GitHub Actions workflow runs every 6 hours. It fetches the latest
-release tag from the upstream GitHub API and rebuilds/pushes the image if
-needed. You can also trigger a manual build from the **Actions** tab and
-optionally specify an exact version to build.
+Two GitHub Actions workflows keep the image current:
+
+- **`watch-upstream.yml`** — polls the upstream GitHub API every 15 minutes. If the latest release is not yet in GHCR, it triggers a build automatically.
+- **`build.yml`** — does the actual multi-platform build and push. Triggered by the watcher or manually from the **Actions** tab (optionally with a specific version).
+
+New upstream releases are typically picked up within 15 minutes.
 
 ## Repository Secrets
 
