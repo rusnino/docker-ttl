@@ -106,9 +106,10 @@ jobs:
     runs-on: ubuntu-latest
     # secrets context is not available in step-level if: conditions.
     # Map secret presence to plain env booleans, which ARE allowed in step if:.
+    # Criteria match watch-upstream.yml: all three secrets must be set.
     env:
-      HAS_CODEBERG: ${{ secrets.CODEBERG_TOKEN != '' }}
-      HAS_QUAY:     ${{ secrets.QUAY_TOKEN != '' }}
+      HAS_CODEBERG: ${{ secrets.CODEBERG_NAMESPACE != '' && secrets.CODEBERG_USERNAME != '' && secrets.CODEBERG_TOKEN != '' }}
+      HAS_QUAY:     ${{ secrets.QUAY_NAMESPACE != '' && secrets.QUAY_USERNAME != '' && secrets.QUAY_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v4

@@ -18,12 +18,14 @@ permissions:
 jobs:
   watch:
     runs-on: ubuntu-latest
-    # Map optional registry namespace secrets to env booleans (secrets not
-    # allowed in step-level if: conditions).
+    # A registry is "configured" only when the full credential set is present.
+    # Partial config (e.g. namespace set but token missing) is treated as
+    # not configured to avoid a trigger→skip loop where the watcher sees a
+    # registry as missing but build.yml skips its login and push steps.
     env:
-      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_NAMESPACE != '' }}
-      HAS_CODEBERG:  ${{ secrets.CODEBERG_NAMESPACE != '' }}
-      HAS_QUAY:      ${{ secrets.QUAY_NAMESPACE != '' }}
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_NAMESPACE != '' && secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+      HAS_CODEBERG:  ${{ secrets.CODEBERG_NAMESPACE != '' && secrets.CODEBERG_USERNAME != '' && secrets.CODEBERG_TOKEN != '' }}
+      HAS_QUAY:      ${{ secrets.QUAY_NAMESPACE != '' && secrets.QUAY_USERNAME != '' && secrets.QUAY_TOKEN != '' }}
 
     steps:
       - name: Get latest upstream release tag
