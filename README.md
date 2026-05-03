@@ -21,10 +21,10 @@ building and publishing multi-platform OCI images from the upstream
 
 ```sh
 # Basic hop trace to a host (TUI mode — requires -it for terminal UI)
-docker run --rm -it --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1
+docker run --pull=always --rm -it --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1
 
 # 5-hop trace with a final report
-docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1 -c 5 --report
+docker run --pull=always --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1 -c 5 --report
 
 # Pin to a specific version
 docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl:v0.19.0 8.8.8.8
