@@ -20,8 +20,8 @@ building and publishing multi-platform OCI images from the upstream
 ## Usage
 
 ```sh
-# Basic hop trace to a host
-docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1
+# Basic hop trace to a host (TUI mode — requires -it for terminal UI)
+docker run --rm -it --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1
 
 # 5-hop trace with a final report
 docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl 1.1.1.1 -c 5 --report
@@ -127,7 +127,7 @@ Forced rebuilds (e.g. after a base image rotation) update the existing release w
 - No secrets or credentials are baked into the image or the repository.
 - For production use, pin images by digest rather than tag (digests are available in the GitHub Release):
   ```sh
-  docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl@sha256:<digest> 1.1.1.1
+  docker run --rm -it --cap-add=NET_RAW ghcr.io/rusnino/ttl@sha256:<digest> 1.1.1.1
   ```
 
 ## Licensing

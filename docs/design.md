@@ -182,6 +182,6 @@ Quay.io push requires a robot account (username format: `namespace+robotname`). 
 - No secrets or credentials are baked into the image or the repository.
 - For production workloads, pin by digest rather than tag to avoid tag mutation:
   ```sh
-  docker run --rm --cap-add=NET_RAW ghcr.io/rusnino/ttl@sha256:<digest> 1.1.1.1
+  docker run --rm -it --cap-add=NET_RAW ghcr.io/rusnino/ttl@sha256:<digest> 1.1.1.1
   ```
 - `--cap-add=NET_RAW` is required for raw ICMP socket access. It does not grant full `--privileged` access.
